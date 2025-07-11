@@ -89,11 +89,11 @@ st.divider()
 for scene_idx, scene in enumerate(st.session_state.scenes):
     with st.container():
         st.subheader(f"Scene {scene['id']}")
-        scene["title"] = st.text_input("Scene Title", scene["title"], key=f"title_{scene_idx}")
-        scene["hook"] = st.text_input("Hook", scene["hook"], key=f"hook_{scene_idx}")
-        scene["problem"] = st.text_input("Problem", scene["problem"], key=f"prob_{scene_idx}")
-        scene["conflict"] = st.text_input("Conflict", scene["conflict"], key=f"conf_{scene_idx}")
-        scene["resolution"] = st.text_input("Resolution", scene["resolution"], key=f"res_{scene_idx}")
+        scene["title"] = st.text_area("Scene Title", scene["title"], key=f"title_{scene_idx}")
+        scene["hook"] = st.text_area("Hook", scene["hook"], key=f"hook_{scene_idx}")
+        scene["problem"] = st.text_area("Problem", scene["problem"], key=f"prob_{scene_idx}")
+        scene["conflict"] = st.text_area("Conflict", scene["conflict"], key=f"conf_{scene_idx}")
+        scene["resolution"] = st.text_area("Resolution", scene["resolution"], key=f"res_{scene_idx}")
 
         st.markdown("**Shots** (4 per scene)")
         for shot_idx, shot in enumerate(scene["shots"]):
