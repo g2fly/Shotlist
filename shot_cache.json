@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1,
+    "title": "Test",
+    "hook": "Test",
+    "problem": "Test",
+    "conflict": "Test",
+    "resolution": "TEST",
+    "shots": [
+      {
+        "id": 1,
+        "type": "Wide",
+        "alt_type": null,
+        "description": "Description"
+      },
+      {
+        "id": 2,
+        "type": "Medium Shot",
+        "alt_type": null,
+        "description": ""
+      },
+      {
+        "id": 3,
+        "type": "Close-Up",
+        "alt_type": null,
+        "description": ""
+      },
+      {
+        "id": 4,
+        "type": null,
+        "alt_type": "Wide",
+        "description": ""
+      }
+    ]
+  }
+]
