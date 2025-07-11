@@ -111,7 +111,7 @@ for scene_idx, scene in enumerate(st.session_state.scenes):
                 shot["file"] = st.file_uploader("Inspiration Image (optional)", type=["png", "jpg", "jpeg"], key=f"sfile_{scene_idx}_{shot_idx}")
                 if shot["file"] is not None:
                     shot["file"].seek(0)
-                    st.image(shot["file"], caption=f"Scene {scene['id']} – Shot {shot['id']} ({shot_type_display})", use_column_width=True)
+                    st.image(shot["file"], caption=f"Scene {scene['id']} – Shot {shot['id']} ({shot_type_display})", use_container_width=True)
         st.divider()
 
 # Save cache each run
