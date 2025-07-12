@@ -2,69 +2,88 @@
 Author: ChatGPT (OpenAI)
 Updated: 2025-07-11
 
-Features
---------
-* Scene‑based planner: Title + Hook, Problem, Conflict, Resolution
-* Four‑shot cycle per scene (Wide → Medium Shot → Close‑Up → user‑choice)
-* Inspiration image preview, autosave cache, high‑quality JPEG & PDF export
-* **New footer**: explains the classic shot sequence and story‑beat structure,
-  with a link to a detailed YouTube breakdown.
+Browser‑only version using **`st.query_params`** (no more experimental APIs).
+Each project is serialized into the URL `data` parameter; every tab gets its own
+plan unless you share the link.
 """
 
-import json
-import os
-import io
+import json, io, base64, zlib, time
 from typing import List, Dict, Any
-import time
+
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 st.set_page_config(page_title="🎬 Scene & Shot Planner", page_icon="🎬", layout="wide")
 st.title("🎬 Scene & Shot Planner")
 
-CACHE_FILE = "shot_cache.json"
 SHOT_CYCLE = ["Wide", "Medium Shot", "Close‑Up", None]
 
 # ---------------------------------------------------------------------------
-# Cache helpers
+# URL‑based storage helpers
 # ---------------------------------------------------------------------------
 
-def load_cached() -> List[Dict[str, Any]]:
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as fp:
-                data = json.load(fp)
-                for sc in data:
-                    for sh in sc.get("shots", []):
-                        sh.setdefault("file", None)
-                return data
-        except Exception:
-            pass
-    return []
+def encode_scenes(scenes: List[Dict[str, Any]]) -> str:
+    """Compress + base64 the scenes list, excluding live file objects."""
+    def strip_files(obj):
+        return [
+            {
+                **sc,
+                "shots": [{k: v for k, v in sh.items() if k != "file"} for sh in sc["shots"]],
+            }
+            for sc in obj
+        ]
 
-def save_cache(scenes: List[Dict[str, Any]]):
-    sanitized = []
-    for sc in scenes:
-        sc_copy = sc.copy()
-        sc_copy["shots"] = [ {k: v for k, v in sh.items() if k != "file"} for sh in sc["shots"] ]
-        sanitized.append(sc_copy)
-    with open(CACHE_FILE, "w") as fp:
-        json.dump(sanitized, fp, indent=2)
+    raw = json.dumps(strip_files(scenes)).encode()
+    compressed = zlib.compress(raw)
+    return base64.urlsafe_b64encode(compressed).decode()
+
+
+def decode_scenes(token: str) -> List[Dict[str, Any]]:
+    try:
+        data = zlib.decompress(base64.urlsafe_b64decode(token)).decode()
+        scenes = json.loads(data)
+        for sc in scenes:
+            for sh in sc.get("shots", []):
+                sh.setdefault("file", None)
+        return scenes
+    except Exception:
+        return []
 
 # ---------------------------------------------------------------------------
-# Session init
+# Load scenes from URL or start empty
 # ---------------------------------------------------------------------------
+
+params = st.query_params  # new API
+initial_token = params.get("data", "")
+initial_scenes: List[Dict[str, Any]] = decode_scenes(initial_token) if initial_token else []
 
 if "scenes" not in st.session_state:
-    st.session_state.scenes = load_cached()
+    st.session_state.scenes = initial_scenes
 
+# ---------------------------------------------------------------------------
+# Scene/shot factory
+# ---------------------------------------------------------------------------
 
 def make_scene(idx: int) -> Dict[str, Any]:
     shots = [
-        {"id": i + 1, "type": t, "alt_type": "Wide" if t is None else None, "description": "", "file": None}
+        {
+            "id": i + 1,
+            "type": t,
+            "alt_type": "Wide" if t is None else None,
+            "description": "",
+            "file": None,
+        }
         for i, t in enumerate(SHOT_CYCLE)
     ]
-    return {"id": idx + 1, "title": "", "hook": "", "problem": "", "conflict": "", "resolution": "", "shots": shots}
+    return {
+        "id": idx + 1,
+        "title": "",
+        "hook": "",
+        "problem": "",
+        "conflict": "",
+        "resolution": "",
+        "shots": shots,
+    }
 
 # ---------------------------------------------------------------------------
 # Controls
@@ -78,12 +97,11 @@ with col_add:
 with col_reset:
     if st.button("🗑️ Reset All", type="secondary"):
         st.session_state.scenes.clear()
-        save_cache(st.session_state.scenes)
 
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Scene Loop
+# Scene editor loop
 # ---------------------------------------------------------------------------
 
 for scene_idx, scene in enumerate(st.session_state.scenes):
@@ -99,26 +117,43 @@ for scene_idx, scene in enumerate(st.session_state.scenes):
         for shot_idx, shot in enumerate(scene["shots"]):
             with st.expander(f"Shot {shot['id']}"):
                 if shot["type"] is None:
-                    shot["alt_type"] = st.selectbox("Shot Size", ["Wide", "Medium Shot", "Close‑Up"],
-                        index=["Wide", "Medium Shot", "Close‑Up"].index(shot["alt_type"]), key=f"stype_{scene_idx}_{shot_idx}")
+                    shot["alt_type"] = st.selectbox(
+                        "Shot Size",
+                        ["Wide", "Medium Shot", "Close‑Up"],
+                        index=["Wide", "Medium Shot", "Close‑Up"].index(shot["alt_type"]),
+                        key=f"stype_{scene_idx}_{shot_idx}",
+                    )
                     shot_type_display = shot["alt_type"]
                 else:
                     shot_type_display = shot["type"]
                     st.markdown(f"**Type:** {shot_type_display}")
 
-                shot["description"] = st.text_area("Description / Action", shot["description"], key=f"sdesc_{scene_idx}_{shot_idx}")
+                shot["description"] = st.text_area(
+                    "Description / Action", shot["description"], key=f"sdesc_{scene_idx}_{shot_idx}"
+                )
 
-                shot["file"] = st.file_uploader("Inspiration Image (optional)", type=["png", "jpg", "jpeg"], key=f"sfile_{scene_idx}_{shot_idx}")
+                shot["file"] = st.file_uploader(
+                    "Inspiration Image (optional)",
+                    type=["png", "jpg", "jpeg"],
+                    key=f"sfile_{scene_idx}_{shot_idx}",
+                )
                 if shot["file"] is not None:
                     shot["file"].seek(0)
-                    st.image(shot["file"], caption=f"Scene {scene['id']} – Shot {shot['id']} ({shot_type_display})", use_container_width=True)
+                    st.image(
+                        shot["file"],
+                        caption=f"Scene {scene['id']} – Shot {shot['id']} ({shot_type_display})",
+                        use_container_width=True,
+                    )
         st.divider()
 
-# Save cache each run
-save_cache(st.session_state.scenes)
+# ---------------------------------------------------------------------------
+# Persist scenes back to URL
+# ---------------------------------------------------------------------------
+
+st.query_params.update(data=encode_scenes(st.session_state.scenes))
 
 # ---------------------------------------------------------------------------
-# Export helpers (JPEG quality max, PDF via Pillow)
+# Export helpers – JPEG + PDF (unchanged)
 # ---------------------------------------------------------------------------
 
 def build_lines(scenes):
@@ -129,7 +164,7 @@ def build_lines(scenes):
         lines.append(f"  Problem: {sc['problem']}")
         lines.append(f"  Conflict: {sc['conflict']}")
         lines.append(f"  Resolution: {sc['resolution']}")
-        for sh in sc['shots']:
+        for sh in sc["shots"]:
             stype = sh['type'] if sh['type'] else sh['alt_type']
             lines.append(f"    Shot {sh['id']} ({stype}) – {sh['description']}")
         lines.append("")
@@ -159,19 +194,26 @@ def scenes_to_pdf(scenes):
     return buf.getvalue()
 
 # ---------------------------------------------------------------------------
-# Downloads
+# Download buttons
 # ---------------------------------------------------------------------------
 
 if st.session_state.scenes:
     st.header("Download Plan")
-    pdf_bytes = scenes_to_pdf(st.session_state.scenes)
-    st.download_button("📄 PDF", data=pdf_bytes, file_name="scene_shot_plan.pdf", mime="application/pdf")
-
-    jpeg_bytes = scenes_to_jpeg(st.session_state.scenes)
-    st.download_button("🖼️ JPEG", data=jpeg_bytes, file_name="scene_shot_plan.jpg", mime="image/jpeg")
+    st.download_button(
+        "📄 PDF",
+        data=scenes_to_pdf(st.session_state.scenes),
+        file_name="scene_shot_plan.pdf",
+        mime="application/pdf",
+    )
+    st.download_button(
+        "🖼️ JPEG",
+        data=scenes_to_jpeg(st.session_state.scenes),
+        file_name="scene_shot_plan.jpg",
+        mime="image/jpeg",
+    )
 
 # ---------------------------------------------------------------------------
-# Educational footer
+# Educational footer & share button (unchanged)
 # ---------------------------------------------------------------------------
 
 st.divider()
@@ -199,10 +241,9 @@ Designing shots around these beats ensures your visuals serve the narrative, not
 [📺 *Watch a quick breakdown of shot sequencing*](https://www.youtube.com/watch?v=y7si6iAo0V)
     """
 )
-# 7️⃣  Bottom image (optional) ------------------------------------------------
-st.image("8K2A2685.jpg", use_container_width=True, caption="Powered by Hill Technologies, LLC")
 
-# 🎉 Share With A Friend Button ----------------------------------------------
+import streamlit.components.v1 as components
+
 if "copy_clicked" not in st.session_state:
     st.session_state.copy_clicked = False
 if "last_copy_time" not in st.session_state:
@@ -220,10 +261,5 @@ if st.button(button_text):
     st.toast("Copied to clipboard!")
     st.balloons()
     components.html(
-        """
-        <script>
-        navigator.clipboard.writeText(window.location.href);
-        </script>
-        """,
-        height=0,
+        "<script>navigator.clipboard.writeText(window.location.href);</script>", height=0
     )
